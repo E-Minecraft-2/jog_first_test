@@ -40,10 +40,10 @@
 #define DIR_PORT              GPIOB
 
 #define KEY_START_PIN         GPIO_Pin_2   // PA2 按键1：启动/停止
-#define KEY_JOG_NEG_PIN       GPIO_Pin_3   // PA3 按键2：负方向点动/参数-
+#define KEY_JOG_NEG_PIN       GPIO_Pin_6   // PA6 按键5：负方向点动/参数-
 #define KEY_JOG_POS_PIN       GPIO_Pin_4   // PA4 按键3：正方向点动/参数+
 #define KEY_MODE_PIN          GPIO_Pin_5   // PA5 按键4：随机扰动开关
-#define KEY_FUNC_PIN          GPIO_Pin_6   // PA6 按键5：切换模式
+#define KEY_FUNC_PIN          GPIO_Pin_3   // PA3 按键2：切换模式
 #define KEY_PORT              GPIOA
 
 #define KEY_COUNT             5
@@ -72,6 +72,7 @@ volatile int32_t pending_delta = 0;
 volatile uint8_t pending_flag = 0;
 volatile uint8_t motion_enable = 0;
 volatile uint8_t jog_active = 0;
+static uint8_t return_active = 0;
 volatile uint8_t ui_mode = UI_MODE_MOTION;
 
 static float motion_frequency = MOTION_FREQUENCY;
@@ -93,7 +94,6 @@ void User_TIM2_Init_Jog(void);
 void User_TIM3_Base_Init(void);
 void User_SendPulsesNonBlock(int32_t pulses);    // 非阻塞发送脉冲
 void User_Motion_Calc(void);                     // 简谐运动计算
-void User_Delay_ms(uint32_t ms);          
 void User_Jog_Process(void); 
 void User_Key_Scan(void);
 void User_Key_ClearEvents(void);
@@ -127,6 +127,12 @@ int main(void)
     {
         User_Key_Scan();
 
+        if (return_active && !sending)
+        {
+            User_StopMotion();
+            User_UpdateOLED();
+        }
+
         if (User_Key_GetEvent(KEY_MODE))
         {
             User_StopMotion();
@@ -137,11 +143,18 @@ int main(void)
             User_UpdateOLED();
         }
 
-        if (ui_mode == UI_MODE_MOTION && User_Key_GetEvent(KEY_START) && !jog_active)
+        if (ui_mode == UI_MODE_MOTION && User_Key_GetEvent(KEY_START) && !jog_active && !return_active)
         {
             if (motion_enable)
             {
                 User_StopMotion();
+                if (current_position != motion_start_position)
+                {
+                    User_TIM2_Init_Jog();
+                    TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+                    return_active = 1;
+                    User_SendPulsesNonBlock(motion_start_position - current_position);
+                }
             }
             else
             {
@@ -267,8 +280,10 @@ uint8_t User_Key_IsPressed(uint8_t key)
 // ==================== 停止输出 ====================
 void User_StopMotion(void)
 {
+    TIM_Cmd(TIM2, DISABLE);
     motion_enable = 0;
     jog_active = 0;
+    return_active = 0;
     sending = 0;
     sent_pulses = 0;
     pending_delta = 0;
@@ -335,8 +350,9 @@ void User_UpdateOLED(void)
     OLED_Clear();
     OLED_ShowString(0, 0, ui_mode == UI_MODE_MOTION ? "MODE:RUN" :
                          (ui_mode == UI_MODE_FREQUENCY ? "MODE:FREQ" : "MODE:AMP"), OLED_6X8);
-    OLED_ShowString(0, 8, motion_enable ? "MOTION:ON " :
-                         (motion_limit_error ? "MOTION:LIMIT" : "MOTION:OFF"), OLED_6X8);
+    OLED_ShowString(0, 8, return_active ? "MOTION:RETURN" :
+                         (motion_enable ? "MOTION:ON " :
+                         (motion_limit_error ? "MOTION:LIMIT" : "MOTION:OFF")), OLED_6X8);
     OLED_ShowString(0, 16, jog_active ? "JOG:ON " : "JOG:OFF", OLED_6X8);
     OLED_ShowString(54, 16, random_disturbance_enable ? "RND:ON" : "RND:OFF", OLED_6X8);
     OLED_ShowString(0, 24, "POSmm:", OLED_6X8);
@@ -373,7 +389,7 @@ void User_Jog_Process(void)
     uint8_t neg_pressed;
     uint8_t pos_pressed;
 
-    if (motion_enable || ui_mode != UI_MODE_MOTION)
+    if (motion_enable || return_active || ui_mode != UI_MODE_MOTION)
         return;
 
     neg_pressed = User_Key_IsPressed(KEY_NEG);
@@ -684,14 +700,4 @@ void User_Motion_Calc(void)
         pos_float += delta_int;
         User_SendPulsesNonBlock(delta_int);
     }
-}
-
-// ==================== 延时 ====================
-void User_Delay_ms(uint32_t ms)
-{
-    uint32_t i;
-    uint32_t j;
-
-    for (i = 0; i < ms; i++)
-        for (j = 0; j < 8000; j++);
 }
