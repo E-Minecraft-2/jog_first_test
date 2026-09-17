@@ -42,8 +42,8 @@
 #define KEY_START_PIN         GPIO_Pin_2   // PA2 按键1：启动/停止
 #define KEY_JOG_NEG_PIN       GPIO_Pin_3   // PA3 按键2：负方向点动/参数-
 #define KEY_JOG_POS_PIN       GPIO_Pin_4   // PA4 按键3：正方向点动/参数+
-#define KEY_MODE_PIN          GPIO_Pin_5   // PA5 按键4：切换模式
-#define KEY_FUNC_PIN          GPIO_Pin_6   // PA6 按键5：随机扰动开关
+#define KEY_MODE_PIN          GPIO_Pin_5   // PA5 按键4：随机扰动开关
+#define KEY_FUNC_PIN          GPIO_Pin_6   // PA6 按键5：切换模式
 #define KEY_PORT              GPIOA
 
 #define KEY_COUNT             5
@@ -57,8 +57,8 @@
 #define KEY_START             0
 #define KEY_NEG               1
 #define KEY_POS               2
-#define KEY_MODE              3
-#define KEY_FUNC              4
+#define KEY_RANDOM            3
+#define KEY_MODE              4
 
 // ==================== 全局变量 ====================
 volatile uint32_t sys_time_us = 0;           // 系统时间，单位：微秒
@@ -164,7 +164,7 @@ int main(void)
             User_UpdateOLED();
         }
 
-        if (ui_mode == UI_MODE_MOTION && User_Key_GetEvent(KEY_FUNC) && !jog_active)
+        if (ui_mode == UI_MODE_MOTION && User_Key_GetEvent(KEY_RANDOM) && !jog_active)
         {
             if (random_disturbance_enable)
             {
