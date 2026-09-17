@@ -1,0 +1,229 @@
+# ============================================================
+# STM32G4 项目 .gitignore
+# ============================================================
+
+# --- 编译输出 / Build outputs ---
+build/
+build-*/
+cmake-build-*/
+cmake-build-debug/
+cmake-build-release/
+cmake-build-debug*/
+cmake-build-release*/
+Debug/
+Release/
+out/
+bin/
+obj/
+.cache/
+.tmp/
+
+# --- Keil MDK 编译产物 ---
+MDK-ARM/STM32G4_TEST/
+MDK-ARM/EIDE/
+MDK-ARM/*.lst
+MDK-ARM/*.obj
+MDK-ARM/*.htm
+MDK-ARM/*.build_log.htm
+MDK-ARM/*.dep
+MDK-ARM/*.JLinkLog.txt
+MDK-ARM/*.uvguix.*
+MDK-ARM/*.scvd
+MDK-ARM/*.dbgconf
+MDK-ARM/DebugConfig/
+MDK-ARM/RTE/
+MDK-ARM/Listings/
+MDK-ARM/Objects/
+MDK-ARM/*.crf
+MDK-ARM/*.d
+MDK-ARM/*.o
+MDK-ARM/*.axf
+MDK-ARM/*.hex
+MDK-ARM/*.bin
+MDK-ARM/*.elf
+MDK-ARM/*.map
+MDK-ARM/*.iex
+MDK-ARM/*.lnp
+MDK-ARM/*.plg
+MDK-ARM/*.tmp
+MDK-ARM/*.sct
+MDK-ARM/**/*.lst
+MDK-ARM/**/*.obj
+MDK-ARM/**/*.htm
+MDK-ARM/**/*.build_log.htm
+MDK-ARM/**/*.dep
+MDK-ARM/**/*.JLinkLog.txt
+MDK-ARM/**/*.uvguix.*
+MDK-ARM/**/*.scvd
+MDK-ARM/**/*.dbgconf
+MDK-ARM/**/*.crf
+MDK-ARM/**/*.d
+MDK-ARM/**/*.o
+MDK-ARM/**/*.axf
+MDK-ARM/**/*.hex
+MDK-ARM/**/*.bin
+MDK-ARM/**/*.elf
+MDK-ARM/**/*.map
+MDK-ARM/**/*.iex
+MDK-ARM/**/*.lnp
+MDK-ARM/**/*.plg
+MDK-ARM/**/*.tmp
+MDK-ARM/**/*.sct
+
+# Recursive Keil/EIDE outputs for projects under the repo root
+**/MDK-ARM/STM32G4_TEST/
+**/MDK-ARM/EIDE/
+**/MDK-ARM/DebugConfig/
+**/MDK-ARM/RTE/
+**/MDK-ARM/Listings/
+**/MDK-ARM/Objects/
+**/MDK-ARM/**/*.lst
+**/MDK-ARM/**/*.obj
+**/MDK-ARM/**/*.htm
+**/MDK-ARM/**/*.build_log.htm
+**/MDK-ARM/**/*.dep
+**/MDK-ARM/**/*.JLinkLog.txt
+**/MDK-ARM/**/*.uvguix.*
+**/MDK-ARM/**/*.scvd
+**/MDK-ARM/**/*.dbgconf
+**/MDK-ARM/**/*.crf
+**/MDK-ARM/**/*.d
+**/MDK-ARM/**/*.o
+**/MDK-ARM/**/*.axf
+**/MDK-ARM/**/*.hex
+**/MDK-ARM/**/*.bin
+**/MDK-ARM/**/*.elf
+**/MDK-ARM/**/*.map
+**/MDK-ARM/**/*.iex
+**/MDK-ARM/**/*.lnp
+**/MDK-ARM/**/*.plg
+**/MDK-ARM/**/*.tmp
+**/MDK-ARM/**/*.sct
+
+# 保留 Keil 工程入口文件，忽略本机用户状态和编译结果
+!MDK-ARM/*.uvprojx
+!MDK-ARM/*.uvoptx
+!MDK-ARM/startup_*.s
+
+# --- EIDE / 本地 IDE 配置与产物 ---
+.eide/
+.vscode/
+.idea/
+.claude/
+
+# --- STM32CubeIDE 生成文件 ---
+*.mxproject.backup*
+.mxproject
+
+# --- 编译中间文件 ---
+*.o
+*.obj
+*.elf
+*.hex
+*.bin
+*.map
+*.d
+*.a
+*.la
+*.lai
+*.so
+*.so.*
+*.dll
+*.dylib
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+*.map.old
+*.map.view
+*.objlist
+*.lnp
+*.su
+*.slo
+*.lo
+*.lib
+*.exp
+
+# --- 链接器 ---
+*.ld
+!STM32G4*.ld
+
+# --- 汇编 ---
+*.lst
+*.s
+*.asm
+!startup_*.s
+
+# --- OS 生成文件 ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+debug.log
+
+# --- 编辑器临时文件 ---
+*~
+*.swp
+*.swo
+*.swn
+*.bak
+*.tmp
+*.temp
+.~lock.*
+\#*\#
+.#*
+
+# --- VSCode (部分忽略，保留 settings.json / tasks.json) ---
+.vscode/*.log
+.vscode/ipch/
+
+# --- JetBrains / CLion (部分忽略) ---
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/codeStyles/
+.idea/shelf/
+.idea/**/contentModel.xml
+.idea/**/dataSources/
+.idea/**/dataSources.ids
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+ENV/
+env/
+
+# --- DAPLink / 调试器配置 ---
+*.pyocd_log
+*.JLinkLog.txt
+*.log
+
+# --- 压缩包 ---
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+keilkill.bat
+
+# ============================================================
+# 本项目：根目录 Keil 工程（江协科技模板布局）
+# ============================================================
+Objects/
+Listings/
+DebugConfig/
+RTE/
+*.uvguix.*
+JLinkSettings.ini
