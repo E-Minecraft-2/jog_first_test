@@ -12,6 +12,8 @@
 #define MOTION_FREQUENCY_MIN  0.01f  // 简谐运动频率最小值，单位：Hz
 #define MOTION_FREQUENCY_MAX  2.00f  // 简谐运动频率最大值，单位：Hz
 #define MOTION_FREQUENCY_STEP 0.01f  // 简谐运动频率调节步长，单位：Hz
+#define RANDOM_DISTURBANCE_MM 10.0f  // 随机扰动幅值，单位：mm
+#define RANDOM_UPDATE_US      100000UL // 随机扰动更新周期，单位：微秒
 
 // ==================== 点动参数 ====================
 #define JOG_SPEED_MMPS        100.0f // 点动速度，单位：mm/s
@@ -22,6 +24,7 @@
 #define PULSES_PER_MM         (PULSES_PER_REV / LEAD_SCREW_PITCH)              // 每毫米脉冲数
 #define MAX_TRAVEL_MM         950.0f // 电缸最大运行长度，单位：mm
 #define MAX_TRAVEL_PULSES     ((int32_t)(MAX_TRAVEL_MM * PULSES_PER_MM))        // 电缸最大运行脉冲数
+#define RANDOM_DISTURBANCE_PULSES ((int32_t)(RANDOM_DISTURBANCE_MM * PULSES_PER_MM)) // 随机扰动幅值，单位：脉冲
 
 // TIM2 PWM载波频率，简谐运动模式使用
 #define PWM_PULSE_FREQ        100000UL                        // PWM脉冲频率，单位：Hz
@@ -40,7 +43,7 @@
 #define KEY_JOG_NEG_PIN       GPIO_Pin_3   // PA3 按键2：负方向点动/参数-
 #define KEY_JOG_POS_PIN       GPIO_Pin_4   // PA4 按键3：正方向点动/参数+
 #define KEY_MODE_PIN          GPIO_Pin_5   // PA5 按键4：切换模式
-#define KEY_FUNC_PIN          GPIO_Pin_6   // PA6 按键5：预留
+#define KEY_FUNC_PIN          GPIO_Pin_6   // PA6 按键5：随机扰动开关
 #define KEY_PORT              GPIOA
 
 #define KEY_COUNT             5
@@ -76,6 +79,10 @@ static float motion_amplitude = MOTION_AMPLITUDE_MM;
 static int32_t motion_start_position = 0;
 static uint32_t motion_start_time_us = 0;
 static uint8_t motion_limit_error = 0;
+static uint8_t random_disturbance_enable = 0;
+static int32_t random_disturbance_pulses = 0;
+static uint32_t random_update_time_us = 0;
+static uint32_t random_state = 0x13579BDFUL;
 static uint8_t key_pressed[KEY_COUNT] = {0};
 static uint8_t key_event[KEY_COUNT] = {0};
 
@@ -95,6 +102,8 @@ uint8_t User_Key_IsPressed(uint8_t key);
 void User_StopMotion(void);
 void User_Param_Process(void);
 void User_UpdateOLED(void);
+uint8_t User_MotionFitsTravel(int32_t start_position, uint8_t random_enable);
+int32_t User_RandomDisturbancePulses(void);
 
 // ==================== 主函数 ====================
 int main(void)
@@ -136,15 +145,14 @@ int main(void)
             }
             else
             {
-                int32_t amplitude_pulses = (int32_t)(motion_amplitude * PULSES_PER_MM);
-
-                if (current_position >= 0 &&
-                    current_position <= MAX_TRAVEL_PULSES - 2 * amplitude_pulses)
+                if (User_MotionFitsTravel(current_position, random_disturbance_enable))
                 {
                     motion_enable = 1;
                     motion_limit_error = 0;
                     motion_start_position = current_position;
                     motion_start_time_us = sys_time_us;
+                    random_disturbance_pulses = 0;
+                    random_update_time_us = sys_time_us;
                     pos_float = (float)current_position;
                     User_TIM2_Init_Harmonic();
                 }
@@ -152,6 +160,27 @@ int main(void)
                 {
                     motion_limit_error = 1;
                 }
+            }
+            User_UpdateOLED();
+        }
+
+        if (ui_mode == UI_MODE_MOTION && User_Key_GetEvent(KEY_FUNC) && !jog_active)
+        {
+            if (random_disturbance_enable)
+            {
+                random_disturbance_enable = 0;
+                random_disturbance_pulses = 0;
+            }
+            else if (User_MotionFitsTravel(motion_enable ? motion_start_position : current_position, 1))
+            {
+                random_disturbance_enable = 1;
+                motion_limit_error = 0;
+                random_disturbance_pulses = 0;
+                random_update_time_us = sys_time_us;
+            }
+            else
+            {
+                motion_limit_error = 1;
             }
             User_UpdateOLED();
         }
@@ -309,6 +338,7 @@ void User_UpdateOLED(void)
     OLED_ShowString(0, 8, motion_enable ? "MOTION:ON " :
                          (motion_limit_error ? "MOTION:LIMIT" : "MOTION:OFF"), OLED_6X8);
     OLED_ShowString(0, 16, jog_active ? "JOG:ON " : "JOG:OFF", OLED_6X8);
+    OLED_ShowString(54, 16, random_disturbance_enable ? "RND:ON" : "RND:OFF", OLED_6X8);
     OLED_ShowString(0, 24, "POSmm:", OLED_6X8);
     OLED_ShowSignedNum(36, 24, position_mm, 4, OLED_6X8);
     OLED_ShowString(0, 32, "FREQx100:", OLED_6X8);
@@ -316,6 +346,25 @@ void User_UpdateOLED(void)
     OLED_ShowString(0, 40, "AMPmm:", OLED_6X8);
     OLED_ShowNum(42, 40, amplitude_mm, 3, OLED_6X8);
     OLED_Update();
+}
+
+uint8_t User_MotionFitsTravel(int32_t start_position, uint8_t random_enable)
+{
+    int32_t amplitude_pulses;
+
+    amplitude_pulses = (int32_t)(motion_amplitude * PULSES_PER_MM);
+    if (random_enable)
+        amplitude_pulses += RANDOM_DISTURBANCE_PULSES;
+
+    return start_position >= 0 &&
+           start_position <= MAX_TRAVEL_PULSES - 2 * amplitude_pulses;
+}
+
+int32_t User_RandomDisturbancePulses(void)
+{
+    random_state = random_state * 1664525UL + 1013904223UL;
+    return (int32_t)(random_state % (2 * RANDOM_DISTURBANCE_PULSES + 1)) -
+           RANDOM_DISTURBANCE_PULSES;
 }
 
 // ==================== 点动处理 ====================
@@ -616,8 +665,16 @@ void User_Motion_Calc(void)
     float delta_float;
     int32_t delta_int;
 
+    if (random_disturbance_enable &&
+        (uint32_t)(sys_time_us - random_update_time_us) >= RANDOM_UPDATE_US)
+    {
+        random_update_time_us = sys_time_us;
+        random_disturbance_pulses = User_RandomDisturbancePulses();
+    }
+
     t = (uint32_t)(sys_time_us - motion_start_time_us) / 1000000.0f;
-    target_float = motion_start_position + motion_amplitude * PULSES_PER_MM *
+    target_float = motion_start_position +
+                   (motion_amplitude * PULSES_PER_MM + random_disturbance_pulses) *
                    (1.0f - cosf(2.0f * PI * motion_frequency * t));
     delta_float = target_float - pos_float;
     delta_int = (int32_t)(delta_float + (delta_float >= 0 ? 0.5f : -0.5f));
