@@ -655,6 +655,16 @@
           <GroupName>System</GroupName>
           <Files>
             <File>
+              <FileName>Timebase.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\System\Timebase.c</FilePath>
+            </File>
+            <File>
+              <FileName>Timebase.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\System\Timebase.h</FilePath>
+            </File>
+            <File>
               <FileName>Delay.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\System\Delay.c</FilePath>
@@ -669,6 +679,26 @@
         <Group>
           <GroupName>Hardware</GroupName>
           <Files>
+            <File>
+              <FileName>Key.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\Key.c</FilePath>
+            </File>
+            <File>
+              <FileName>Key.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\Key.h</FilePath>
+            </File>
+            <File>
+              <FileName>Motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\Motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>Motor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\Motor.h</FilePath>
+            </File>
             <File>
               <FileName>OLED.c</FileName>
               <FileType>1</FileType>
@@ -695,9 +725,29 @@
           <GroupName>User</GroupName>
           <Files>
             <File>
+              <FileName>App.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\User\App.c</FilePath>
+            </File>
+            <File>
+              <FileName>App.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\App.h</FilePath>
+            </File>
+            <File>
               <FileName>main.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\User\main.c</FilePath>
+            </File>
+            <File>
+              <FileName>UI.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\User\UI.c</FilePath>
+            </File>
+            <File>
+              <FileName>UI.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\UI.h</FilePath>
             </File>
             <File>
               <FileName>stm32f10x_conf.h</FileName>
