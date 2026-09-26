@@ -13,9 +13,14 @@
 #define MOTION_FREQUENCY_STEP 0.01f  // 简谐运动频率调节步长，单位：Hz
 #define RANDOM_DISTURBANCE_MM 10.0f  // 随机扰动幅值，单位：mm
 #define RANDOM_UPDATE_US      100000UL // 随机扰动更新周期，单位：微秒
+#define INTERFERENCE_STEP     5U      // 串口屏每次调整的干扰强度，单位：百分比
 
 // ==================== 点动参数 ====================
 #define JOG_SPEED_MMPS        100.0f // 点动速度，单位：mm/s
+#define JOG_AMPLITUDE_MM      1U     // 单次点动默认幅值，单位：mm
+#define JOG_AMPLITUDE_MIN     1U     // 单次点动最小幅值，单位：mm
+#define JOG_AMPLITUDE_MAX     100U   // 单次点动最大幅值，单位：mm
+#define JOG_AMPLITUDE_STEP    1U     // 串口屏每次调整的点动幅值，单位：mm
 
 // ==================== 固定参数（齿轮比 5:1） ====================
 #define PULSES_PER_REV        2000UL                              // 每转脉冲数（含细分）
@@ -47,6 +52,7 @@ static volatile int32_t pending_delta;    // 下一批待发送脉冲增量
 static volatile uint8_t pending_flag;     // 存在待发送脉冲增量
 static volatile uint8_t motion_enable;    // 简谐运动已启动
 static volatile uint8_t jog_active;       // 点动正在执行
+static uint16_t jog_amplitude = JOG_AMPLITUDE_MM;    // 单次点动幅值，单位：mm
 static uint8_t return_active;             // 正在返回简谐运动起点
 static float motion_frequency = MOTION_FREQUENCY;     // 简谐运动频率，单位：Hz
 static float motion_amplitude = MOTION_AMPLITUDE_MM;  // 简谐运动幅值，单位：mm
@@ -54,6 +60,7 @@ static int32_t motion_start_position;                 // 简谐运动起点脉�
 static uint32_t motion_start_time_us;                 // 简谐运动起点时间，单位：微秒
 static uint8_t motion_limit_error;                    // 简谐运动起点或幅值超出行程限制
 static uint8_t random_disturbance_enable;             // 随机扰动使能
+static uint8_t random_interference = 100;              // 随机扰动强度，范围0~100%
 static int32_t random_disturbance_pulses;             // 随机扰动幅值，单位：脉冲
 static uint32_t random_update_time_us;                // 随机扰动上次更新时间，单位：微秒
 static uint32_t random_state = 0x13579BDFUL;          // 随机数生成器状态
@@ -163,8 +170,11 @@ static uint8_t Motor_FitsTravel(int32_t start_position, uint8_t random_enable)
 
 static int32_t Motor_RandomDisturbancePulses(void)
 {
+    int32_t value;
+
     random_state = random_state * 1664525UL + 1013904223UL;
-    return (int32_t)(random_state % (2 * RANDOM_DISTURBANCE_PULSES + 1)) - RANDOM_DISTURBANCE_PULSES;
+    value = (int32_t)(random_state % (2 * RANDOM_DISTURBANCE_PULSES + 1)) - RANDOM_DISTURBANCE_PULSES;
+    return value * random_interference / 100;
 }
 
 // 发送脉冲；当前批次未完成时将增量累积到下一批
@@ -256,13 +266,15 @@ void Motor_ReturnToStart(void)
  * 
  * @param now_us 
  */
-void Motor_ToggleRandom(uint32_t now_us)
+void Motor_SetRandomEnabled(uint8_t enabled, uint32_t now_us)
 {
-    if (random_disturbance_enable)
+    if (!enabled)
     {
         random_disturbance_enable = 0;
         random_disturbance_pulses = 0;
     }
+    else if (random_disturbance_enable)
+        return;
     else if (Motor_FitsTravel(motion_enable ? motion_start_position : current_position, 1))
     {
         random_disturbance_enable = 1;
@@ -272,6 +284,11 @@ void Motor_ToggleRandom(uint32_t now_us)
     }
     else
         motion_limit_error = 1;
+}
+
+void Motor_ToggleRandom(uint32_t now_us)
+{
+    Motor_SetRandomEnabled(!random_disturbance_enable, now_us);
 }
 
 /**
@@ -329,33 +346,29 @@ void Motor_ProcessJog(uint8_t neg_pressed, uint8_t pos_pressed)
         jog_active = 0;
     }
 }
-/** @brief 更新电机状态
- * 
- * @param now_us 
- */
-void Motor_Update(uint32_t now_us)
-{
-    float t;
-    float target_float;
-    float delta_float;
-    int32_t delta_int;
 
-    if (random_disturbance_enable && (uint32_t)(now_us - random_update_time_us) >= RANDOM_UPDATE_US)
-    {
-        random_update_time_us = now_us;
-        random_disturbance_pulses = Motor_RandomDisturbancePulses();
-    }
-    t = (uint32_t)(now_us - motion_start_time_us) / 1000000.0f;
-    target_float = motion_start_position +
-        (motion_amplitude * PULSES_PER_MM + random_disturbance_pulses) *
-        (1.0f - cosf(2.0f * PI * motion_frequency * t));
-    delta_float = target_float - pos_float;
-    delta_int = (int32_t)(delta_float + (delta_float >= 0 ? 0.5f : -0.5f));
-    if (delta_int != 0)
-    {
-        pos_float += delta_int;
-        Motor_SendPulses(delta_int);
-    }
+void Motor_JogStep(int8_t direction)
+{
+    int32_t pulses;
+
+    if (direction == 0 || motion_enable || return_active || jog_active || sending)
+        return;
+
+    pulses = (int32_t)(jog_amplitude * PULSES_PER_MM);
+    if (direction < 0)
+        pulses = -pulses;
+    if (current_position + pulses < 0)
+        pulses = -current_position;
+    else if (current_position + pulses > MAX_TRAVEL_PULSES)
+        pulses = MAX_TRAVEL_PULSES - current_position;
+    if (pulses == 0)
+        return;
+
+    // 串口屏每次只发送一次点击事件，按照当前设置的点动幅值执行。
+    Motor_InitJog();
+    pending_delta = 0;
+    pending_flag = 0;
+    Motor_SendPulses(pulses);
 }
 /** @brief 更新电机状态
  * 
@@ -412,6 +425,58 @@ void Motor_ChangeAmplitude(int8_t direction)
             motion_amplitude + MOTION_AMPLITUDE_STEP : MOTION_AMPLITUDE_MAX;
 }
 
+void Motor_ChangeInterference(int8_t direction)
+{
+    if (direction < 0)
+        random_interference = random_interference > INTERFERENCE_STEP ?
+            random_interference - INTERFERENCE_STEP : 0;
+    else
+        random_interference = random_interference < 100 - INTERFERENCE_STEP ?
+            random_interference + INTERFERENCE_STEP : 100;
+}
+
+void Motor_ChangeJogAmplitude(int8_t direction)
+{
+    if (direction < 0)
+        jog_amplitude = jog_amplitude > JOG_AMPLITUDE_MIN + JOG_AMPLITUDE_STEP ?
+            jog_amplitude - JOG_AMPLITUDE_STEP : JOG_AMPLITUDE_MIN;
+    else
+        jog_amplitude = jog_amplitude < JOG_AMPLITUDE_MAX - JOG_AMPLITUDE_STEP ?
+            jog_amplitude + JOG_AMPLITUDE_STEP : JOG_AMPLITUDE_MAX;
+}
+
+void Motor_SetFrequencyX100(uint16_t frequency_x100)
+{
+    if (frequency_x100 < 1)
+        frequency_x100 = 1;
+    else if (frequency_x100 > 200)
+        frequency_x100 = 200;
+    motion_frequency = frequency_x100 / 100.0f;
+}
+
+void Motor_SetAmplitudeX100(uint16_t amplitude_x100)
+{
+    if (amplitude_x100 < 1000)
+        amplitude_x100 = 1000;
+    else if (amplitude_x100 > 47000)
+        amplitude_x100 = 47000;
+    motion_amplitude = amplitude_x100 / 100.0f;
+}
+
+void Motor_SetInterference(uint8_t interference)
+{
+    random_interference = interference > 100 ? 100 : interference;
+}
+
+void Motor_SetJogAmplitudeMm(uint16_t amplitude_mm)
+{
+    if (amplitude_mm < JOG_AMPLITUDE_MIN)
+        amplitude_mm = JOG_AMPLITUDE_MIN;
+    else if (amplitude_mm > JOG_AMPLITUDE_MAX)
+        amplitude_mm = JOG_AMPLITUDE_MAX;
+    jog_amplitude = amplitude_mm;
+}
+
 uint8_t Motor_IsMotionEnabled(void) { return motion_enable; } // 检查简谐运动是否启用
 uint8_t Motor_IsJogActive(void) { return jog_active; } // 检查Jog模式是否激活
 uint8_t Motor_IsReturnActive(void) { return return_active; } // 检查返回起点模式是否激活
@@ -419,8 +484,12 @@ uint8_t Motor_IsSending(void) { return sending; } // 检查是否正在发送脉
 uint8_t Motor_HasLimitError(void) { return motion_limit_error; } // 检查是否发生限位错误
 uint8_t Motor_IsRandomEnabled(void) { return random_disturbance_enable; } // 检查随机扰动是否启用
 int32_t Motor_GetPositionMm(void) { return current_position / PULSES_PER_MM; }
+int32_t Motor_GetPositionX100Mm(void) { return current_position * 100 / PULSES_PER_MM; }
 uint16_t Motor_GetFrequencyX100(void) { return (uint16_t)(motion_frequency * 100.0f + 0.5f); }
 uint16_t Motor_GetAmplitudeMm(void) { return (uint16_t)(motion_amplitude + 0.5f); }
+uint16_t Motor_GetAmplitudeX100(void) { return (uint16_t)(motion_amplitude * 100.0f + 0.5f); }
+uint8_t Motor_GetInterference(void) { return random_interference; }
+uint16_t Motor_GetJogAmplitudeMm(void) { return jog_amplitude; }
 
 void TIM2_IRQHandler(void)
 {

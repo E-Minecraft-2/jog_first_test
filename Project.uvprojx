@@ -700,6 +700,16 @@
               <FilePath>.\Hardware\Motor.h</FilePath>
             </File>
             <File>
+              <FileName>HMI.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\HMI.c</FilePath>
+            </File>
+            <File>
+              <FileName>HMI.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\HMI.h</FilePath>
+            </File>
+            <File>
               <FileName>OLED.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Hardware\OLED.c</FilePath>
@@ -733,6 +743,11 @@
               <FileName>App.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\User\App.h</FilePath>
+            </File>
+            <File>
+              <FileName>AppConfig.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\AppConfig.h</FilePath>
             </File>
             <File>
               <FileName>main.c</FileName>
