@@ -167,7 +167,10 @@ static uint8_t Motor_FitsTravel(int32_t start_position, uint8_t random_enable)
         amplitude_pulses += RANDOM_DISTURBANCE_PULSES;
     return start_position >= 0 && start_position <= MAX_TRAVEL_PULSES - 2 * amplitude_pulses;
 }
-
+/**
+ * @brief 获取随机扰动脉冲数
+ * @return 随机扰动脉冲数
+ */
 static int32_t Motor_RandomDisturbancePulses(void)
 {
     int32_t value;
@@ -199,7 +202,9 @@ static void Motor_SendPulses(int32_t pulses)
         pending_flag = 1;
     }
 }
-
+/**
+ * @brief 初始化电机
+ */
 void Motor_Init(void)
 {
     GPIO_InitTypeDef gpio;
@@ -346,7 +351,10 @@ void Motor_ProcessJog(uint8_t neg_pressed, uint8_t pos_pressed)
         jog_active = 0;
     }
 }
-
+/** @brief 执行点动步进
+ * 
+ * @param direction 
+ */
 void Motor_JogStep(int8_t direction)
 {
     int32_t pulses;
