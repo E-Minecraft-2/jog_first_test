@@ -22,6 +22,14 @@
 #define JOG_AMPLITUDE_MAX     100U   // 单次点动最大幅值，单位：mm
 #define JOG_AMPLITUDE_STEP    1U     // 串口屏每次调整的点动幅值，单位：mm
 
+// ==================== 开机回零参数 ====================
+#define HOME_SWITCH_PIN       GPIO_Pin_12 // PB12光耦输入，高电平表示到达零点
+#define HOME_SWITCH_PORT      GPIOB
+#define MAX_LIMIT_PIN         GPIO_Pin_13 // PB13光耦输入，高电平表示到达最大限位
+#define MAX_LIMIT_PORT        GPIOB
+#define HOME_DEBOUNCE_US      20000UL     // 回零信号稳定时间，单位：微秒
+#define HOME_TIMEOUT_US       12000000UL  // 开机回零最长时间，单位：微秒
+
 // ==================== 固定参数（齿轮比 5:1） ====================
 #define PULSES_PER_REV        2000UL                              // 每转脉冲数（含细分）
 #define LEAD_SCREW_PITCH      20.0f                               // 滚珠丝杆导程，单位：mm
@@ -52,8 +60,13 @@ static volatile int32_t pending_delta;    // 下一批待发送脉冲增量
 static volatile uint8_t pending_flag;     // 存在待发送脉冲增量
 static volatile uint8_t motion_enable;    // 简谐运动已启动
 static volatile uint8_t jog_active;       // 点动正在执行
+static volatile uint8_t startup_homing_active;       // 开机寻找机械零点
 static uint16_t jog_amplitude = JOG_AMPLITUDE_MM;    // 单次点动幅值，单位：mm
 static uint8_t return_active;             // 正在返回简谐运动起点
+static uint8_t home_signal_pending;        // 已检测到高电平，正在进行消抖确认
+static uint8_t max_limit_latched;          // 最大限位触发锁存，防止高电平期间重复回零
+static uint32_t home_start_time_us;        // 开机回零开始时间
+static uint32_t home_signal_time_us;       // PB12首次变为高电平的时间
 static float motion_frequency = MOTION_FREQUENCY;     // 简谐运动频率，单位：Hz
 static float motion_amplitude = MOTION_AMPLITUDE_MM;  // 简谐运动幅值，单位：mm
 static int32_t motion_start_position;                 // 简谐运动起点脉冲位置
@@ -214,6 +227,12 @@ void Motor_Init(void)
     gpio.GPIO_Speed = GPIO_Speed_50MHz;
     gpio.GPIO_Pin = DIR_PIN;
     GPIO_Init(DIR_PORT, &gpio);
+
+    // 板上已有外部上拉，PB12/PB13使用浮空输入，高电平表示限位信号有效。
+    gpio.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    gpio.GPIO_Pin = HOME_SWITCH_PIN | MAX_LIMIT_PIN;
+    GPIO_Init(GPIOB, &gpio);
+
     Motor_InitHarmonic();
     GPIO_SetBits(DIR_PORT, DIR_PIN);
 }
@@ -226,11 +245,98 @@ void Motor_Stop(void)
     Motor_StopPulseOutput();
     motion_enable = 0;
     jog_active = 0;
+    startup_homing_active = 0;
     return_active = 0;
+    home_signal_pending = 0;
     sending = 0;
     sent_pulses = 0;
     pending_delta = 0;
     pending_flag = 0;
+}
+
+void Motor_StartStartupHoming(uint32_t now_us)
+{
+    Motor_Stop();
+    motion_limit_error = 0;
+    startup_homing_active = 1;
+    home_start_time_us = now_us;
+
+    // 若上电时已经检测到零点，先保持停止并进行消抖确认。
+    if (GPIO_ReadInputDataBit(HOME_SWITCH_PORT, HOME_SWITCH_PIN) != Bit_RESET)
+    {
+        home_signal_pending = 1;
+        home_signal_time_us = now_us;
+        return;
+    }
+
+    // 向下回零对应DIR低电平；回零期间不使用软件位置下限判断。
+    Motor_InitJog();
+    GPIO_ResetBits(DIR_PORT, DIR_PIN);
+    Motor_StartPulseOutput();
+}
+
+void Motor_ProcessStartupHoming(uint32_t now_us)
+{
+    if (!startup_homing_active)
+        return;
+
+    if (GPIO_ReadInputDataBit(HOME_SWITCH_PORT, HOME_SWITCH_PIN) != Bit_RESET)
+    {
+        if (!home_signal_pending)
+        {
+            // 首次检测到零点立即停止，避免在消抖期间继续冲击机械限位。
+            Motor_StopPulseOutput();
+            home_signal_pending = 1;
+            home_signal_time_us = now_us;
+        }
+        else if ((uint32_t)(now_us - home_signal_time_us) >= HOME_DEBOUNCE_US)
+        {
+            Motor_Stop();
+            current_position = 0;
+            pos_float = 0.0f;
+            motion_start_position = 0;
+            motion_limit_error = 0;
+            return;
+        }
+    }
+    else if (home_signal_pending)
+    {
+        // 消抖期间信号消失，继续向下寻找零点。
+        home_signal_pending = 0;
+        GPIO_ResetBits(DIR_PORT, DIR_PIN);
+        Motor_StartPulseOutput();
+    }
+
+    if ((uint32_t)(now_us - home_start_time_us) >= HOME_TIMEOUT_US)
+    {
+        Motor_Stop();
+        motion_limit_error = 1;
+    }
+}
+
+void Motor_ProcessMaxLimit(uint32_t now_us)
+{
+    uint8_t active = GPIO_ReadInputDataBit(MAX_LIMIT_PORT, MAX_LIMIT_PIN) != Bit_RESET;
+
+    // 回零方向为向下，此时只记录PB13电平，不允许重复启动回零流程。
+    if (startup_homing_active || return_active)
+    {
+        max_limit_latched = active;
+        return;
+    }
+
+    if (!active)
+    {
+        max_limit_latched = 0;
+        return;
+    }
+
+    if (!max_limit_latched)
+    {
+        max_limit_latched = 1;
+        // 该函数首先停止当前脉冲，再向下寻找PB12机械零点。
+        Motor_StartStartupHoming(now_us);
+    }
 }
 /**
  * @brief 开始简谐运动
@@ -487,6 +593,7 @@ void Motor_SetJogAmplitudeMm(uint16_t amplitude_mm)
 
 uint8_t Motor_IsMotionEnabled(void) { return motion_enable; } // 检查简谐运动是否启用
 uint8_t Motor_IsJogActive(void) { return jog_active; } // 检查Jog模式是否激活
+uint8_t Motor_IsStartupHomingActive(void) { return startup_homing_active; }
 uint8_t Motor_IsReturnActive(void) { return return_active; } // 检查返回起点模式是否激活
 uint8_t Motor_IsSending(void) { return sending; } // 检查是否正在发送脉冲
 uint8_t Motor_HasLimitError(void) { return motion_limit_error; } // 检查是否发生限位错误
@@ -505,7 +612,11 @@ void TIM2_IRQHandler(void)
     if (TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET)
     {
         TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
-        if (jog_active)
+        if (startup_homing_active)
+        {
+            // 开机回零只输出向下脉冲，机械零点确认后再建立软件坐标。
+        }
+        else if (jog_active)
         {
             if (GPIO_ReadOutputDataBit(DIR_PORT, DIR_PIN))
             {

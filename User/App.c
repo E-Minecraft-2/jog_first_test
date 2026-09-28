@@ -37,8 +37,12 @@ static void App_ProcessHMI(uint32_t now_us)
     while (HMI_GetFrame(&frame))
     {
         handled = 1;
-        // 简谐运行期间只接受两个运行按钮，按下任意一个都停止运行并开始回零。
-        if (Motor_IsMotionEnabled() && frame.command != 0xC1 && frame.command != 0xC2)
+        // 开机回零期间禁止操作；简谐运行期间只接受两个运行按钮用于停止并回零。
+        if (Motor_IsStartupHomingActive())
+        {
+            handled = 0;
+        }
+        else if (Motor_IsMotionEnabled() && frame.command != 0xC1 && frame.command != 0xC2)
         {
             handled = 0;
         }
@@ -175,6 +179,8 @@ void App_Init(void)
 #if APP_ENABLE_HMI
     HMI_Init();
 #endif
+    // 通讯和时间基准就绪后立即寻找机械零点，过程由主循环非阻塞处理。
+    Motor_StartStartupHoming(Timebase_GetUs());
     UI_Init();
     UI_Update(ui_mode);
 }
@@ -187,6 +193,19 @@ void App_Process(void)
 {
     // 主循环按固定顺序完成按键、模式、运动和界面处理
     uint32_t now = Timebase_GetUs();
+    uint8_t startup_homing_was_active = Motor_IsStartupHomingActive();
+
+    // 最大限位优先级最高：PB13有效时立即停止当前运动并启动PB12机械回零。
+    Motor_ProcessMaxLimit(now);
+    if (!startup_homing_was_active && Motor_IsStartupHomingActive())
+        UI_Update(ui_mode);
+
+    if (Motor_IsStartupHomingActive())
+    {
+        Motor_ProcessStartupHoming(now);
+        if (!Motor_IsStartupHomingActive())
+            UI_Update(ui_mode);
+    }
 
 #if APP_ENABLE_HMI
     App_ProcessHMI(now);

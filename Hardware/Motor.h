@@ -5,6 +5,9 @@
 
 void Motor_Init(void);
 void Motor_Stop(void);
+void Motor_StartStartupHoming(uint32_t now_us);
+void Motor_ProcessStartupHoming(uint32_t now_us);
+void Motor_ProcessMaxLimit(uint32_t now_us);
 void Motor_StartMotion(uint32_t now_us);
 void Motor_ReturnToStart(void);
 void Motor_ToggleRandom(uint32_t now_us);
@@ -22,6 +25,7 @@ void Motor_SetInterference(uint8_t interference);
 void Motor_SetJogAmplitudeMm(uint16_t amplitude_mm);
 uint8_t Motor_IsMotionEnabled(void);
 uint8_t Motor_IsJogActive(void);
+uint8_t Motor_IsStartupHomingActive(void);
 uint8_t Motor_IsReturnActive(void);
 uint8_t Motor_IsSending(void);
 uint8_t Motor_HasLimitError(void);

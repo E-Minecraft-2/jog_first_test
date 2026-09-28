@@ -10,7 +10,7 @@
 #define HMI_PAGE_RUN        0x00
 #define HMI_PAGE_HOME       0x02
 
-static uint8_t hmi_last_return_active; // 记录上次回零状态，避免周期刷新时重复切换页面
+static uint8_t hmi_last_home_active; // 记录上次回零状态，避免周期刷新时重复切换页面
 #endif
 #if APP_ENABLE_OLED
 #include "OLED.h"
@@ -22,10 +22,12 @@ static uint8_t hmi_last_return_active; // 记录上次回零状态，避免周�
 void UI_Init(void)
 {
 #if APP_ENABLE_HMI
-    uint8_t page = HMI_PAGE_RUN;
+    uint8_t home_active = Motor_IsStartupHomingActive() || Motor_IsReturnActive();
+    uint8_t page = home_active ? HMI_PAGE_HOME : HMI_PAGE_RUN;
 
-    // 上电后通知串口屏进入运行界面，调整界面由屏端按钮自行切换。
+    // 上电正在寻找机械零点时直接进入page2，否则进入运行界面。
     HMI_SendFrame(HMI_CMD_PAGE_SELECT, &page, 1);
+    hmi_last_home_active = home_active;
 #endif
 #if APP_ENABLE_OLED
     OLED_Init();
@@ -37,16 +39,20 @@ void UI_Update(uint8_t ui_mode)
 #if APP_ENABLE_HMI
     uint8_t data[10];
     uint8_t state;
+    uint8_t startup_homing_active;
     uint8_t return_active;
+    uint8_t home_active;
     uint8_t page;
     uint32_t position;
     uint16_t frequency;
     uint16_t amplitude;
 
+    startup_homing_active = Motor_IsStartupHomingActive();
     return_active = Motor_IsReturnActive();
+    home_active = startup_homing_active || return_active;
     if (Motor_HasLimitError())
         state = 4;
-    else if (return_active)
+    else if (home_active)
         state = 3;
     else if (Motor_IsMotionEnabled() && Motor_IsRandomEnabled())
         state = 2;
@@ -57,16 +63,17 @@ void UI_Update(uint8_t ui_mode)
     else
         state = 0;
 
-    position = (uint32_t)Motor_GetPositionX100Mm();
+    // 开机回零完成前尚未建立相对坐标，屏幕位置固定显示0.00 mm。
+    position = startup_homing_active ? 0U : (uint32_t)Motor_GetPositionX100Mm();
     frequency = Motor_GetFrequencyX100();
     amplitude = Motor_GetAmplitudeX100();
 
-    // 回零开始时进入page2，回零完成后回到page0；只在状态变化时发送切页命令。
-    if (return_active != hmi_last_return_active)
+    // 开机回零或返回起点时进入page2，完成后回到page0；只在状态变化时切页。
+    if (home_active != hmi_last_home_active)
     {
-        page = return_active ? HMI_PAGE_HOME : HMI_PAGE_RUN;
+        page = home_active ? HMI_PAGE_HOME : HMI_PAGE_RUN;
         HMI_SendFrame(HMI_CMD_PAGE_SELECT, &page, 1);
-        hmi_last_return_active = return_active;
+        hmi_last_home_active = home_active;
     }
 
     // 运行页和调整页共用此状态帧，三个参数始终由下位机周期下发。
