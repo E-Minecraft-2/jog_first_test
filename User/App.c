@@ -37,40 +37,45 @@ static void App_ProcessHMI(uint32_t now_us)
     while (HMI_GetFrame(&frame))
     {
         handled = 1;
-        switch (frame.command)
+        // 简谐运行期间只接受两个运行按钮，按下任意一个都停止运行并开始回零。
+        if (Motor_IsMotionEnabled() && frame.command != 0xC1 && frame.command != 0xC2)
         {
-            case 0xA1:
+            handled = 0;
+        }
+        else switch (frame.command)
+        {
+            case 0xA1: // 频率加/减
                 if (frame.length == 0) Motor_ChangeFrequency(1); else handled = 0;
                 break;
-            case 0xA2:
+            case 0xA2: // 频率减
                 if (frame.length == 0) Motor_ChangeFrequency(-1); else handled = 0;
                 break;
-            case 0xA3:
+            case 0xA3: // 幅值加
                 if (frame.length == 0) Motor_ChangeAmplitude(1); else handled = 0;
                 break;
-            case 0xA4:
+            case 0xA4: // 幅值减
                 if (frame.length == 0) Motor_ChangeAmplitude(-1); else handled = 0;
                 break;
-            case 0xA5:
+            case 0xA5: // 点动幅值加
                 if (frame.length == 0) Motor_ChangeJogAmplitude(1); else handled = 0;
                 break;
-            case 0xA6:
+            case 0xA6: // 点动幅值减
                 if (frame.length == 0) Motor_ChangeJogAmplitude(-1); else handled = 0;
                 break;
 
-            case 0xB1:
+            case 0xB1: // 设置频率(单位：0.01Hz)
                 if (frame.length == 2)
                     Motor_SetFrequencyX100(App_ReadU16(frame.data));
                 else
                     handled = 0;
                 break;
-            case 0xB2:
+            case 0xB2: // 设置幅值(单位：0.01mm)
                 if (frame.length == 2)
                     Motor_SetAmplitudeX100(App_ReadU16(frame.data));
                 else
                     handled = 0;
                 break;
-            case 0xB3:
+            case 0xB3: // 设置点动幅值(单位：mm)
                 if (frame.length == 2)
                 {
                     value = App_ReadU16(frame.data);
@@ -81,7 +86,7 @@ static void App_ProcessHMI(uint32_t now_us)
                     handled = 0;
                 break;
 
-            case 0xC1:
+            case 0xC1: // 回零
                 if (frame.length != 0 || Motor_IsJogActive() || Motor_IsReturnActive())
                     handled = 0;
                 else if (Motor_IsMotionEnabled())
@@ -94,7 +99,7 @@ static void App_ProcessHMI(uint32_t now_us)
                     Motor_StartMotion(now_us);
                 }
                 break;
-            case 0xC2:
+            case 0xC2: // 随机运行
                 if (frame.length != 0 || Motor_IsJogActive() || Motor_IsReturnActive())
                     handled = 0;
                 else if (Motor_IsMotionEnabled())
@@ -108,13 +113,13 @@ static void App_ProcessHMI(uint32_t now_us)
                         Motor_StartMotion(now_us);
                 }
                 break;
-            case 0xC3:
+            case 0xC3: // 点动正向
                 if (frame.length == 0) Motor_JogStep(1); else handled = 0;
                 break;
-            case 0xC4:
+            case 0xC4: // 点动反向
                 if (frame.length == 0) Motor_JogStep(-1); else handled = 0;
                 break;
-            case 0xD1:
+            case 0xD1: // 停止运动
                 if (frame.length == 0) Motor_ReturnToStart(); else handled = 0;
                 break;
             default:

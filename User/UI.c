@@ -50,8 +50,10 @@ void UI_Update(uint8_t ui_mode)
         state = 3;
     else if (Motor_IsMotionEnabled() && Motor_IsRandomEnabled())
         state = 2;
-    else if (Motor_IsMotionEnabled() || Motor_IsJogActive() || Motor_IsSending())
+    else if (Motor_IsMotionEnabled())
         state = 1;
+    else if (Motor_IsJogActive() || Motor_IsSending())
+        state = 5;
     else
         state = 0;
 
@@ -68,7 +70,8 @@ void UI_Update(uint8_t ui_mode)
     }
 
     // 运行页和调整页共用此状态帧，三个参数始终由下位机周期下发。
-    // E1数据：状态、位置(0.01 mm)、频率(0.01 Hz)、振幅(0.01 mm)、点动幅值(mm)。
+    // E1状态：0空闲、1运行1、2运行2、3回零、4限位错误、5点动。
+    // 其余数据：位置(0.01 mm)、频率(0.01 Hz)、振幅(0.01 mm)、点动幅值(mm)。
     // 多字节字段按小端序发送，便于串口屏使用ucopy直接读取。
     data[0] = state;
     data[1] = (uint8_t)position;
