@@ -622,7 +622,7 @@ void TIM2_IRQHandler(void)
             {
                 if (current_position < MAX_TRAVEL_PULSES)
                     current_position++;
-                else
+                else   
                     jog_active = 0;
                 if (current_position >= MAX_TRAVEL_PULSES)
                     jog_active = 0;

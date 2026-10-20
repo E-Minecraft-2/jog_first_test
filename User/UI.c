@@ -62,7 +62,6 @@ void UI_Update(uint8_t ui_mode)
         state = 5;
     else
         state = 0;
-
     // 开机回零完成前尚未建立相对坐标，屏幕位置固定显示0.00 mm。
     position = startup_homing_active ? 0U : (uint32_t)Motor_GetPositionX100Mm();
     frequency = Motor_GetFrequencyX100();
@@ -75,7 +74,6 @@ void UI_Update(uint8_t ui_mode)
         HMI_SendFrame(HMI_CMD_PAGE_SELECT, &page, 1);
         hmi_last_home_active = home_active;
     }
-
     // 运行页和调整页共用此状态帧，三个参数始终由下位机周期下发。
     // E1状态：0空闲、1运行1、2运行2、3回零、4限位错误、5点动。
     // 其余数据：位置(0.01 mm)、频率(0.01 Hz)、振幅(0.01 mm)、点动幅值(mm)。
