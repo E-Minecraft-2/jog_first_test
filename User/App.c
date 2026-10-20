@@ -12,6 +12,7 @@
 #include "UI.h"
 
 #define UI_REFRESH_US 100000UL // 串口屏状态刷新周期，单位：微秒
+#define HMI_JOG_TIMEOUT_US 300000UL // 长按点动保持帧超时，单位：微秒
 #define UI_MODE_MOTION    0      // 运行与点动模式
 #define UI_MODE_FREQUENCY 1      // 频率参数设置模式
 #define UI_MODE_AMPLITUDE 2      // 幅值参数设置模式
@@ -21,6 +22,9 @@ static uint32_t last_time_us;            // 上次执行简谐运动计算的时
 static uint32_t last_ui_us;              // 上次刷新界面状态的时间
 
 #if APP_ENABLE_HMI
+static int8_t hmi_jog_direction;          // -1向下，0停止，1向上
+static uint32_t hmi_jog_last_time_us;     // 最近一次点动保持帧时间
+
 static uint16_t App_ReadU16(const uint8_t *data)
 {
     // 与淘晶驰prints/ucopy保持一致：低字节在前，高字节在后。
@@ -118,10 +122,34 @@ static void App_ProcessHMI(uint32_t now_us)
                 }
                 break;
             case 0xC3: // 点动正向
-                if (frame.length == 0) Motor_JogStep(1); else handled = 0;
+                if (frame.length != 1 || frame.data[0] > 1 || Motor_IsReturnActive())
+                    handled = 0;
+                else if (frame.data[0])
+                {
+                    hmi_jog_direction = 1;
+                    hmi_jog_last_time_us = now_us;
+                    Motor_ProcessJog(0, 1);
+                }
+                else if (hmi_jog_direction > 0)
+                {
+                    hmi_jog_direction = 0;
+                    Motor_ProcessJog(0, 0);
+                }
                 break;
             case 0xC4: // 点动反向
-                if (frame.length == 0) Motor_JogStep(-1); else handled = 0;
+                if (frame.length != 1 || frame.data[0] > 1 || Motor_IsReturnActive())
+                    handled = 0;
+                else if (frame.data[0])
+                {
+                    hmi_jog_direction = -1;
+                    hmi_jog_last_time_us = now_us;
+                    Motor_ProcessJog(1, 0);
+                }
+                else if (hmi_jog_direction < 0)
+                {
+                    hmi_jog_direction = 0;
+                    Motor_ProcessJog(0, 0);
+                }
                 break;
             case 0xD1: // 停止运动
                 if (frame.length == 0) Motor_ReturnToStart(); else handled = 0;
@@ -134,6 +162,21 @@ static void App_ProcessHMI(uint32_t now_us)
         // 状态帧同时作为有效命令的执行反馈。
         if (handled)
             UI_Update(ui_mode);
+    }
+}
+
+static void App_ProcessHMIJogSafety(uint32_t now_us)
+{
+    if (hmi_jog_direction == 0)
+        return;
+
+    // 回零、运行或通信超时时强制停止，防止弹起帧丢失后持续运动。
+    if (Motor_IsStartupHomingActive() || Motor_IsReturnActive() || Motor_IsMotionEnabled() ||
+        (uint32_t)(now_us - hmi_jog_last_time_us) >= HMI_JOG_TIMEOUT_US)
+    {
+        hmi_jog_direction = 0;
+        Motor_ProcessJog(0, 0);
+        UI_Update(ui_mode);
     }
 }
 #endif
@@ -195,7 +238,7 @@ void App_Process(void)
     uint32_t now = Timebase_GetUs();
     uint8_t startup_homing_was_active = Motor_IsStartupHomingActive();
 
-    // 最大限位优先级最高：PB13有效时立即停止当前运动并启动PB12机械回零。
+    // 最大限位优先级最高：PB13有效时立即停止当前运动并启动PB15机械回零。
     Motor_ProcessMaxLimit(now);
     if (!startup_homing_was_active && Motor_IsStartupHomingActive())
         UI_Update(ui_mode);
@@ -209,6 +252,7 @@ void App_Process(void)
 
 #if APP_ENABLE_HMI
     App_ProcessHMI(now);
+    App_ProcessHMIJogSafety(now);
 #endif
 #if APP_ENABLE_KEY
     Key_Scan(now);

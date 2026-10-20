@@ -23,7 +23,7 @@
 #define JOG_AMPLITUDE_STEP    1U     // 串口屏每次调整的点动幅值，单位：mm
 
 // ==================== 开机回零参数 ====================
-#define HOME_SWITCH_PIN       GPIO_Pin_12 // PB12光耦输入，高电平表示到达零点
+#define HOME_SWITCH_PIN       GPIO_Pin_15 // PB15磁性开关输入，低电平表示到达零点
 #define HOME_SWITCH_PORT      GPIOB
 #define MAX_LIMIT_PIN         GPIO_Pin_13 // PB13光耦输入，高电平表示到达最大限位
 #define MAX_LIMIT_PORT        GPIOB
@@ -66,7 +66,7 @@ static uint8_t return_active;             // 正在返回简谐运动起点
 static uint8_t home_signal_pending;        // 已检测到高电平，正在进行消抖确认
 static uint8_t max_limit_latched;          // 最大限位触发锁存，防止高电平期间重复回零
 static uint32_t home_start_time_us;        // 开机回零开始时间
-static uint32_t home_signal_time_us;       // PB12首次变为高电平的时间
+static uint32_t home_signal_time_us;       // PB15首次变为低电平的时间
 static float motion_frequency = MOTION_FREQUENCY;     // 简谐运动频率，单位：Hz
 static float motion_amplitude = MOTION_AMPLITUDE_MM;  // 简谐运动幅值，单位：mm
 static int32_t motion_start_position;                 // 简谐运动起点脉冲位置
@@ -228,7 +228,7 @@ void Motor_Init(void)
     gpio.GPIO_Pin = DIR_PIN;
     GPIO_Init(DIR_PORT, &gpio);
 
-    // 板上已有外部上拉，PB12/PB13使用浮空输入，高电平表示限位信号有效。
+    // 板上已有外部上拉：PB15低电平表示零点，PB13高电平表示最大限位。
     gpio.GPIO_Mode = GPIO_Mode_IN_FLOATING;
     gpio.GPIO_Pin = HOME_SWITCH_PIN | MAX_LIMIT_PIN;
     GPIO_Init(GPIOB, &gpio);
@@ -262,7 +262,7 @@ void Motor_StartStartupHoming(uint32_t now_us)
     home_start_time_us = now_us;
 
     // 若上电时已经检测到零点，先保持停止并进行消抖确认。
-    if (GPIO_ReadInputDataBit(HOME_SWITCH_PORT, HOME_SWITCH_PIN) != Bit_RESET)
+    if (GPIO_ReadInputDataBit(HOME_SWITCH_PORT, HOME_SWITCH_PIN) == Bit_RESET)
     {
         home_signal_pending = 1;
         home_signal_time_us = now_us;
@@ -280,7 +280,7 @@ void Motor_ProcessStartupHoming(uint32_t now_us)
     if (!startup_homing_active)
         return;
 
-    if (GPIO_ReadInputDataBit(HOME_SWITCH_PORT, HOME_SWITCH_PIN) != Bit_RESET)
+    if (GPIO_ReadInputDataBit(HOME_SWITCH_PORT, HOME_SWITCH_PIN) == Bit_RESET)
     {
         if (!home_signal_pending)
         {
@@ -334,7 +334,7 @@ void Motor_ProcessMaxLimit(uint32_t now_us)
     if (!max_limit_latched)
     {
         max_limit_latched = 1;
-        // 该函数首先停止当前脉冲，再向下寻找PB12机械零点。
+        // 该函数首先停止当前脉冲，再向下寻找PB15机械零点。
         Motor_StartStartupHoming(now_us);
     }
 }
@@ -410,7 +410,7 @@ void Motor_ToggleRandom(uint32_t now_us)
  */
 void Motor_ProcessJog(uint8_t neg_pressed, uint8_t pos_pressed)
 {
-    if (motion_enable || return_active)
+    if (motion_enable || return_active || startup_homing_active)
         return;
     if (neg_pressed && pos_pressed)
     {

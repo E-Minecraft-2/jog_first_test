@@ -9,8 +9,12 @@
 #define HMI_CMD_STATUS      0xE1
 #define HMI_PAGE_RUN        0x00
 #define HMI_PAGE_HOME       0x02
+#define HMI_PAGE_SYNC_INTERVAL 5U // UI每100 ms刷新，5次即500 ms
+#define HMI_PAGE_SYNC_RETRIES  6U // 上电后重发约3秒，兼容串口屏启动延迟
 
 static uint8_t hmi_last_home_active; // 记录上次回零状态，避免周期刷新时重复切换页面
+static uint8_t hmi_page_sync_ticks;
+static uint8_t hmi_page_sync_retries;
 #endif
 #if APP_ENABLE_OLED
 #include "OLED.h"
@@ -28,6 +32,8 @@ void UI_Init(void)
     // 上电正在寻找机械零点时直接进入page2，否则进入运行界面。
     HMI_SendFrame(HMI_CMD_PAGE_SELECT, &page, 1);
     hmi_last_home_active = home_active;
+    hmi_page_sync_ticks = 0;
+    hmi_page_sync_retries = HMI_PAGE_SYNC_RETRIES;
 #endif
 #if APP_ENABLE_OLED
     OLED_Init();
@@ -43,6 +49,7 @@ void UI_Update(uint8_t ui_mode)
     uint8_t return_active;
     uint8_t home_active;
     uint8_t page;
+    uint8_t send_page = 0;
     uint32_t position;
     uint16_t frequency;
     uint16_t amplitude;
@@ -70,9 +77,26 @@ void UI_Update(uint8_t ui_mode)
     // 开机回零或返回起点时进入page2，完成后回到page0；只在状态变化时切页。
     if (home_active != hmi_last_home_active)
     {
+        hmi_last_home_active = home_active;
+        send_page = 1;
+    }
+
+    // 串口屏可能比单片机启动慢，前约3秒每500 ms重发一次当前页面。
+    if (hmi_page_sync_retries > 0)
+    {
+        hmi_page_sync_ticks++;
+        if (hmi_page_sync_ticks >= HMI_PAGE_SYNC_INTERVAL)
+        {
+            hmi_page_sync_ticks = 0;
+            hmi_page_sync_retries--;
+            send_page = 1;
+        }
+    }
+
+    if (send_page)
+    {
         page = home_active ? HMI_PAGE_HOME : HMI_PAGE_RUN;
         HMI_SendFrame(HMI_CMD_PAGE_SELECT, &page, 1);
-        hmi_last_home_active = home_active;
     }
     // 运行页和调整页共用此状态帧，三个参数始终由下位机周期下发。
     // E1状态：0空闲、1运行1、2运行2、3回零、4限位错误、5点动。
